@@ -5,7 +5,6 @@ const stream = require('stream');
 
 const app = express();
 
-// Endpoint untuk mendapatkan konten dan mengirim secara streaming
 app.get('/getcontent', async (req, res) => {
   const { url } = req.query;
 
@@ -18,14 +17,19 @@ app.get('/getcontent', async (req, res) => {
     const browser = await puppeteer.launch({
       executablePath: await chromium.executablePath(),
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage', // Mengurangi masalah memori
+        '--disable-gpu' // Nonaktifkan GPU
+      ]
     });
     const page = await browser.newPage();
 
     // Akses halaman yang diminta
     await page.goto(url, {
       waitUntil: 'domcontentloaded',
-      timeout: 0
+      timeout: 30000 // Atur timeout agar lebih lama jika perlu
     });
 
     // Ambil tipe konten dari halaman
@@ -64,4 +68,3 @@ const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
-        
