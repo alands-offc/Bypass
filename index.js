@@ -5,6 +5,7 @@ const stream = require('stream');
 
 const app = express();
 
+// Streaming response langsung dari intercept request
 app.get('/getcontent', async (req, res) => {
   const { url } = req.query;
 
@@ -23,10 +24,22 @@ app.get('/getcontent', async (req, res) => {
 
     const page = await browser.newPage();
 
-    // Stream yang akan mengirim data ke respons
+    // Enable request interception
+    await page.setRequestInterception(true);
+
     const bodyStream = new stream.PassThrough();
 
-    // Event listener untuk mendapatkan data setiap kali respons diterima
+    // Handle every request
+    page.on('request', (request) => {
+      // Bypass requests like images, CSS, etc., to improve performance
+      if (['image', 'stylesheet', 'font'].includes(request.resourceType())) {
+        request.abort();
+      } else {
+        request.continue();
+      }
+    });
+
+    // Handle every response
     page.on('response', async (response) => {
       if (response.ok() && response.url() === url) {
         const buffer = await response.buffer();
@@ -34,20 +47,18 @@ app.get('/getcontent', async (req, res) => {
       }
     });
 
-    // Akses URL dan tunggu hingga halaman siap setelah verifikasi Cloudflare
-    await page.goto(url, { waitUntil: 'networkidle2' });
+    // Go to the URL
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-    // Deteksi konten halaman, jika ada perubahan setelah verifikasi
+    // Set content type (default to HTML if not determined)
     const contentType = await page.evaluate(() => document.contentType || 'text/html');
     res.setHeader('Content-Type', contentType);
 
-    // Teruskan aliran stream ke respons Express
+    // Stream data from the response
     bodyStream.pipe(res);
 
-    // Tunggu sampai DOM benar-benar terupdate untuk memastikan halaman asli terbuka
-    await page.waitForTimeout(5000); // Tambahkan penundaan 5 detik atau sesuai dengan kondisi halaman
-
-    // Tutup stream dan browser setelah halaman selesai dimuat
+    // Close the browser once done
+    await page.waitForTimeout(5000); // Small delay to ensure all data is streamed
     bodyStream.end();
     await browser.close();
 
@@ -62,4 +73,3 @@ const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
-  
