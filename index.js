@@ -1,28 +1,11 @@
 const express = require('express');
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
+const stream = require('stream');
+
 const app = express();
 
-// Fungsi untuk menentukan response type dan mengembalikan konten dengan benar
-const handleResponse = async (page) => {
-  // Coba kembalikan data dalam beberapa format
-  const contentType = await page.evaluate(() => {
-    return document.contentType || 'text/html';
-  });
-
-  if (contentType.includes('application/json')) {
-    const content = await page.evaluate(() => JSON.parse(document.body.innerText));
-    return { type: 'json', content };
-  } else if (contentType.includes('image') || contentType.includes('application/octet-stream')) {
-    const buffer = await page.screenshot();
-    return { type: 'buffer', content: buffer };
-  } else {
-    const content = await page.content();
-    return { type: 'html', content };
-  }
-};
-
-// Route untuk mendapatkan konten dari URL yang diberikan
+// Streaming response langsung dari halaman
 app.get('/getcontent', async (req, res) => {
   const { url } = req.query;
 
@@ -41,23 +24,32 @@ app.get('/getcontent', async (req, res) => {
 
     const page = await browser.newPage();
 
-    // Akses URL dan tunggu sampai halaman selesai dimuat
-    await page.goto(url, { waitUntil: 'networkidle2' });
+    // Setiap kali halaman menerima data, langsung dikirim ke stream
+    const bodyStream = new stream.PassThrough();
+    
+    page.on('response', async (response) => {
+      if (response.ok()) {
+        const buffer = await response.buffer();
+        bodyStream.write(buffer);
+      }
+    });
 
-    // Handle berbagai tipe respons dari halaman
-    const result = await handleResponse(page);
+    // Akses URL dan mulai streaming data
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-    // Kembalikan hasil ke klien
-    if (result.type === 'json') {
-      res.json(result.content);
-    } else if (result.type === 'buffer') {
-      res.setHeader('Content-Type', 'image/png');
-      res.send(result.content);
-    } else {
-      res.send(result.content);
-    }
+    // Set content-type yang benar sesuai respons halaman
+    const contentType = await page.evaluate(() => document.contentType);
+    res.setHeader('Content-Type', contentType || 'text/html');
 
-    await browser.close();
+    // Tutup aliran setelah selesai
+    page.on('load', () => {
+      bodyStream.end();
+      browser.close();
+    });
+
+    // Pipe aliran ke respons Express
+    bodyStream.pipe(res);
+
   } catch (error) {
     console.error('Error fetching page:', error);
     res.status(500).json({ error: 'Failed to fetch content' });
@@ -69,4 +61,4 @@ const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
-  
+      
