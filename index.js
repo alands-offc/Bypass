@@ -5,7 +5,6 @@ const stream = require('stream');
 
 const app = express();
 
-// Streaming response setelah halaman siap
 app.get('/getcontent', async (req, res) => {
   const { url } = req.query;
 
@@ -24,21 +23,43 @@ app.get('/getcontent', async (req, res) => {
 
     const page = await browser.newPage();
 
-    // Akses URL dan tunggu sampai Cloudflare atau verifikasi lain selesai
-    await page.goto(url, { waitUntil: 'networkidle2' });
+    // Enable request interception
+    await page.setRequestInterception(true);
 
-    // Tunggu beberapa detik tambahan jika Cloudflare membutuhkan waktu lebih
-    await page.waitForTimeout(5000); // Optional, bisa disesuaikan
+    // Buat stream untuk respons
+    const bodyStream = new stream.PassThrough();
 
-    // Ambil konten dari halaman (HTML)
-    const content = await page.content();
+    // Tulis data ke client secara langsung
+    bodyStream.pipe(res);
 
-    // Set header untuk HTML dan kirimkan konten ke klien
-    res.setHeader('Content-Type', 'text/html');
-    res.send(content);
+    // Intercept semua request dan respons
+    page.on('request', (request) => {
+      if (['image', 'stylesheet', 'font'].includes(request.resourceType())) {
+        request.abort();  // Batalkan resource yang tidak diperlukan
+      } else {
+        request.continue();  // Lanjutkan request yang diperlukan
+      }
+    });
 
-    // Tutup browser setelah selesai
-    await browser.close();
+    page.on('response', async (response) => {
+      if (response.url() === url) {
+        try {
+          const buffer = await response.buffer();
+          bodyStream.write(buffer);  // Tulis buffer ke stream
+        } catch (err) {
+          console.error('Error streaming response:', err);
+        }
+      }
+    });
+
+    // Pergi ke halaman target
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+
+    // Setelah beberapa saat, akhiri stream
+    setTimeout(async () => {
+      bodyStream.end();
+      await browser.close();
+    }, 10000);  // Batasi waktu untuk mencegah timeout, sesuaikan sesuai kebutuhan
 
   } catch (error) {
     console.error('Error fetching page:', error);
@@ -46,8 +67,8 @@ app.get('/getcontent', async (req, res) => {
   }
 });
 
-// Menjalankan server pada port 3000
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+          
