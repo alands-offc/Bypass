@@ -5,7 +5,6 @@ const stream = require('stream');
 
 const app = express();
 
-// Streaming response langsung dari halaman
 app.get('/getcontent', async (req, res) => {
   const { url } = req.query;
 
@@ -24,31 +23,33 @@ app.get('/getcontent', async (req, res) => {
 
     const page = await browser.newPage();
 
-    // Setiap kali halaman menerima data, langsung dikirim ke stream
+    // Stream yang akan mengirim data ke respons
     const bodyStream = new stream.PassThrough();
-    
+
+    // Event listener untuk mendapatkan data setiap kali respons diterima
     page.on('response', async (response) => {
-      if (response.ok()) {
+      if (response.ok() && response.url() === url) {
         const buffer = await response.buffer();
         bodyStream.write(buffer);
       }
     });
 
-    // Akses URL dan mulai streaming data
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    // Akses URL dan tunggu hingga halaman siap setelah verifikasi Cloudflare
+    await page.goto(url, { waitUntil: 'networkidle2' });
 
-    // Set content-type yang benar sesuai respons halaman
-    const contentType = await page.evaluate(() => document.contentType);
-    res.setHeader('Content-Type', contentType || 'text/html');
+    // Deteksi konten halaman, jika ada perubahan setelah verifikasi
+    const contentType = await page.evaluate(() => document.contentType || 'text/html');
+    res.setHeader('Content-Type', contentType);
 
-    // Tutup aliran setelah selesai
-    page.on('load', () => {
-      bodyStream.end();
-      browser.close();
-    });
-
-    // Pipe aliran ke respons Express
+    // Teruskan aliran stream ke respons Express
     bodyStream.pipe(res);
+
+    // Tunggu sampai DOM benar-benar terupdate untuk memastikan halaman asli terbuka
+    await page.waitForTimeout(5000); // Tambahkan penundaan 5 detik atau sesuai dengan kondisi halaman
+
+    // Tutup stream dan browser setelah halaman selesai dimuat
+    bodyStream.end();
+    await browser.close();
 
   } catch (error) {
     console.error('Error fetching page:', error);
@@ -61,4 +62,4 @@ const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
-      
+  
