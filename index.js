@@ -1,9 +1,11 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 const stream = require('stream');
 
 const app = express();
 
+// Endpoint untuk mendapatkan konten dan mengirim secara streaming
 app.get('/getcontent', async (req, res) => {
   const { url } = req.query;
 
@@ -12,8 +14,9 @@ app.get('/getcontent', async (req, res) => {
   }
 
   try {
-    // Luncurkan browser
+    // Luncurkan browser menggunakan Chromium dari @sparticuz
     const browser = await puppeteer.launch({
+      executablePath: await chromium.executablePath(),
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
