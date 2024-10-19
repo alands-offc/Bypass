@@ -1,10 +1,14 @@
 const express = require('express');
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const stream = require('stream');
+
+// Gunakan plugin stealth untuk Puppeteer
+puppeteer.use(StealthPlugin());
 
 const app = express();
 
+// Endpoint untuk mendapatkan konten dan mengirim secara streaming
 app.get('/getcontent', async (req, res) => {
   const { url } = req.query;
 
@@ -13,53 +17,45 @@ app.get('/getcontent', async (req, res) => {
   }
 
   try {
-    // Luncurkan browser menggunakan Puppeteer dan Chromium
+    // Luncurkan browser dengan Stealth plugin
     const browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: true, // Set to false if you want to see the browser
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
-
     const page = await browser.newPage();
 
-    // Enable request interception
-    await page.setRequestInterception(true);
+    // Akses halaman yang diminta
+    await page.goto(url, {
+      waitUntil: 'domcontentloaded', // Tunggu sampai DOM dimuat
+      timeout: 0 // Nonaktifkan timeout agar menunggu lebih lama jika perlu
+    });
 
-    // Buat stream untuk respons
+    // Ambil tipe konten dari halaman
+    const contentType = await page.evaluate(() => document.contentType);
+
+    // Set header Content-Type sesuai dengan tipe konten halaman
+    res.setHeader('Content-Type', contentType);
+
+    // Buat stream PassThrough untuk streaming respons secara real-time
     const bodyStream = new stream.PassThrough();
 
-    // Tulis data ke client secara langsung
+    // Pipe stream ke respons Express
     bodyStream.pipe(res);
 
-    // Intercept semua request dan respons
-    page.on('request', (request) => {
-      if (['image', 'stylesheet', 'font'].includes(request.resourceType())) {
-        request.abort();  // Batalkan resource yang tidak diperlukan
-      } else {
-        request.continue();  // Lanjutkan request yang diperlukan
-      }
-    });
+    // Ambil konten halaman secara dinamis berdasarkan tipenya
+    if (contentType.includes('application/json')) {
+      const jsonContent = await page.evaluate(() => JSON.parse(document.body.innerText));
+      bodyStream.write(JSON.stringify({ results: jsonContent }));
+    } else {
+      const htmlContent = await page.content();
+      bodyStream.write(JSON.stringify({ results: htmlContent }));
+    }
 
-    page.on('response', async (response) => {
-      if (response.url() === url) {
-        try {
-          const buffer = await response.buffer();
-          bodyStream.write(buffer);  // Tulis buffer ke stream
-        } catch (err) {
-          console.error('Error streaming response:', err);
-        }
-      }
-    });
+    // Akhiri stream setelah data dikirim
+    bodyStream.end();
 
-    // Pergi ke halaman target
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
-
-    // Setelah beberapa saat, akhiri stream
-    setTimeout(async () => {
-      bodyStream.end();
-      await browser.close();
-    }, 10000);  // Batasi waktu untuk mencegah timeout, sesuaikan sesuai kebutuhan
+    // Tutup browser
+    await browser.close();
 
   } catch (error) {
     console.error('Error fetching page:', error);
@@ -67,8 +63,8 @@ app.get('/getcontent', async (req, res) => {
   }
 });
 
+// Menjalankan server di port 3000
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
-          
