@@ -1,0 +1,20 @@
+{
+  "name": "chromium-puppeteer-bypass",
+  "version": "1.0.0",
+  "description": "API to bypass Cloudflare using Puppeteer and Chromium",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@sparticuz/chromium": "^119.0.2",
+    "express": "^4.18.2",
+    "puppeteer-core": "^21.5.1"
+  },
+  "engines": {
+    "node": ">=18.x"
+  },
+  "author": "",
+  "license": "MIT"
+      }
+      
