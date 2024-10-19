@@ -1,14 +1,9 @@
 const express = require('express');
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const puppeteer = require('puppeteer');
 const stream = require('stream');
-
-// Gunakan plugin stealth untuk Puppeteer
-puppeteer.use(StealthPlugin());
 
 const app = express();
 
-// Endpoint untuk mendapatkan konten dan mengirim secara streaming
 app.get('/getcontent', async (req, res) => {
   const { url } = req.query;
 
@@ -17,7 +12,7 @@ app.get('/getcontent', async (req, res) => {
   }
 
   try {
-    // Luncurkan browser dengan Stealth plugin
+    // Luncurkan browser
     const browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox']
@@ -26,8 +21,8 @@ app.get('/getcontent', async (req, res) => {
 
     // Akses halaman yang diminta
     await page.goto(url, {
-      waitUntil: 'domcontentloaded', // Tunggu sampai DOM dimuat
-      timeout: 0 // Nonaktifkan timeout agar menunggu lebih lama jika perlu
+      waitUntil: 'domcontentloaded',
+      timeout: 0
     });
 
     // Ambil tipe konten dari halaman
@@ -36,10 +31,8 @@ app.get('/getcontent', async (req, res) => {
     // Set header Content-Type sesuai dengan tipe konten halaman
     res.setHeader('Content-Type', contentType);
 
-    // Buat stream PassThrough untuk streaming respons secara real-time
+    // Buat stream PassThrough untuk streaming respons
     const bodyStream = new stream.PassThrough();
-
-    // Pipe stream ke respons Express
     bodyStream.pipe(res);
 
     // Ambil konten halaman secara dinamis berdasarkan tipenya
@@ -68,3 +61,4 @@ const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+        
