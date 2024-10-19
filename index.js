@@ -5,7 +5,7 @@ const stream = require('stream');
 
 const app = express();
 
-// Streaming response langsung dari intercept request
+// Streaming response setelah halaman siap
 app.get('/getcontent', async (req, res) => {
   const { url } = req.query;
 
@@ -24,42 +24,20 @@ app.get('/getcontent', async (req, res) => {
 
     const page = await browser.newPage();
 
-    // Enable request interception
-    await page.setRequestInterception(true);
+    // Akses URL dan tunggu sampai Cloudflare atau verifikasi lain selesai
+    await page.goto(url, { waitUntil: 'networkidle2' });
 
-    const bodyStream = new stream.PassThrough();
+    // Tunggu beberapa detik tambahan jika Cloudflare membutuhkan waktu lebih
+    await page.waitForTimeout(5000); // Optional, bisa disesuaikan
 
-    // Handle every request
-    page.on('request', (request) => {
-      // Bypass requests like images, CSS, etc., to improve performance
-      if (['image', 'stylesheet', 'font'].includes(request.resourceType())) {
-        request.abort();
-      } else {
-        request.continue();
-      }
-    });
+    // Ambil konten dari halaman (HTML)
+    const content = await page.content();
 
-    // Handle every response
-    page.on('response', async (response) => {
-      if (response.ok() && response.url() === url) {
-        const buffer = await response.buffer();
-        bodyStream.write(buffer);
-      }
-    });
+    // Set header untuk HTML dan kirimkan konten ke klien
+    res.setHeader('Content-Type', 'text/html');
+    res.send(content);
 
-    // Go to the URL
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
-
-    // Set content type (default to HTML if not determined)
-    const contentType = await page.evaluate(() => document.contentType || 'text/html');
-    res.setHeader('Content-Type', contentType);
-
-    // Stream data from the response
-    bodyStream.pipe(res);
-
-    // Close the browser once done
-    await page.waitForTimeout(5000); // Small delay to ensure all data is streamed
-    bodyStream.end();
+    // Tutup browser setelah selesai
     await browser.close();
 
   } catch (error) {
